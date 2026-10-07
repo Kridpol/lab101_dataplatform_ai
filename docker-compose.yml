@@ -1,0 +1,59 @@
+name: lab101
+
+services:
+  # Simulated OLTP source database ("Databases" in the architecture).
+  postgres:
+    image: postgres:16.15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${SRC_PG_DB:?set SRC_PG_DB in .env}
+      POSTGRES_USER: ${SRC_PG_ADMIN_USER:?set SRC_PG_ADMIN_USER in .env}
+      POSTGRES_PASSWORD: ${SRC_PG_ADMIN_PASSWORD:?set SRC_PG_ADMIN_PASSWORD in .env}
+      # Used by postgres/init/airbyte_user_postgres.sh
+      AIRBYTE_PG_USER: ${AIRBYTE_PG_USER:?set AIRBYTE_PG_USER in .env}
+      AIRBYTE_PG_PASSWORD: ${AIRBYTE_PG_PASSWORD:?set AIRBYTE_PG_PASSWORD in .env}
+    ports:
+      - "${SRC_PG_PORT:-5433}:5432"
+    volumes:
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # -h forces TCP: the temporary server used while init scripts run listens only on the
+      # unix socket, so this stays unhealthy until Postgres is really ready.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    mem_limit: 512m
+
+  # Warehouse: Airbyte loads raw data here, dbt builds marts on top.
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_ADMIN_PASSWORD:?set CLICKHOUSE_ADMIN_PASSWORD in .env}
+      # Lets the built-in `default` admin create users and grants in the init script.
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      # Used by clickhouse/init/airbyte_user_clickhouse.sh
+      CLICKHOUSE_AIRBYTE_USER: ${CLICKHOUSE_AIRBYTE_USER:?set CLICKHOUSE_AIRBYTE_USER in .env}
+      CLICKHOUSE_AIRBYTE_PASSWORD: ${CLICKHOUSE_AIRBYTE_PASSWORD:?set CLICKHOUSE_AIRBYTE_PASSWORD in .env}
+    ports:
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"     # HTTP: Airbyte, dbt, DBeaver
+      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"   # native protocol: clickhouse-client
+    volumes:
+      - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
+      - clickhouse-data:/var/lib/clickhouse
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    mem_limit: 3g
+
+volumes:
+  postgres-data:
+  clickhouse-data:
