@@ -1,6 +1,29 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Claude / agent tooling
 CLAUDE.md
+CLAUDE.local.md
 .claude/
 .agents/
 skills-lock.json
-CLAUDE.local.md
-.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Airflow (later stages)
+airflow/logs/
+
+# Great Expectations (later stages)
+gx/uncommitted/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log

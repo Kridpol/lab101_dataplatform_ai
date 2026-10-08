@@ -1,4 +1,4 @@
-name: lab101
+name: dataplatformbi
 
 services:
   # Simulated OLTP source database ("Databases" in the architecture).
@@ -9,7 +9,6 @@ services:
       POSTGRES_DB: ${SRC_PG_DB:?set SRC_PG_DB in .env}
       POSTGRES_USER: ${SRC_PG_ADMIN_USER:?set SRC_PG_ADMIN_USER in .env}
       POSTGRES_PASSWORD: ${SRC_PG_ADMIN_PASSWORD:?set SRC_PG_ADMIN_PASSWORD in .env}
-      # Used by postgres/init/airbyte_user_postgres.sh
       AIRBYTE_PG_USER: ${AIRBYTE_PG_USER:?set AIRBYTE_PG_USER in .env}
       AIRBYTE_PG_PASSWORD: ${AIRBYTE_PG_PASSWORD:?set AIRBYTE_PG_PASSWORD in .env}
     ports:
@@ -18,8 +17,6 @@ services:
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      # -h forces TCP: the temporary server used while init scripts run listens only on the
-      # unix socket, so this stays unhealthy until Postgres is really ready.
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
@@ -27,22 +24,30 @@ services:
       start_period: 20s
     mem_limit: 512m
 
-  # Warehouse: Airbyte loads raw data here, dbt builds marts on top.
+  # Warehouse: Airbyte loads raw data here.
   clickhouse:
     image: clickhouse/clickhouse-server:25.8
     restart: unless-stopped
     environment:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_ADMIN_PASSWORD:?set CLICKHOUSE_ADMIN_PASSWORD in .env}
-      # Lets the built-in `default` admin create users and grants in the init script.
+
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
-      # Used by clickhouse/init/airbyte_user_clickhouse.sh
+
       CLICKHOUSE_AIRBYTE_USER: ${CLICKHOUSE_AIRBYTE_USER:?set CLICKHOUSE_AIRBYTE_USER in .env}
       CLICKHOUSE_AIRBYTE_PASSWORD: ${CLICKHOUSE_AIRBYTE_PASSWORD:?set CLICKHOUSE_AIRBYTE_PASSWORD in .env}
+      # Used by clickhouse/init/loader_user_clickhouse.sh (loads Parquet from SeaweedFS)
+      CLICKHOUSE_LOADER_USER: ${CLICKHOUSE_LOADER_USER:?set CLICKHOUSE_LOADER_USER in .env}
+      CLICKHOUSE_LOADER_PASSWORD: ${CLICKHOUSE_LOADER_PASSWORD:?set CLICKHOUSE_LOADER_PASSWORD in .env}
+      SEAWEEDFS_BUCKET: ${SEAWEEDFS_BUCKET:-landing}
+      SEAWEEDFS_CLICKHOUSE_ACCESS_KEY: ${SEAWEEDFS_CLICKHOUSE_ACCESS_KEY:?set SEAWEEDFS_CLICKHOUSE_ACCESS_KEY in .env}
+      SEAWEEDFS_CLICKHOUSE_SECRET_KEY: ${SEAWEEDFS_CLICKHOUSE_SECRET_KEY:?set SEAWEEDFS_CLICKHOUSE_SECRET_KEY in .env}
     ports:
-      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"     # HTTP: Airbyte, dbt, DBeaver
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"     # HTTP: Airbyte, DBeaver
       - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"   # native protocol: clickhouse-client
     volumes:
       - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
+      - ./clickhouse/sql:/sql:ro
+      - ./clickhouse/users.d/named_collections.xml:/etc/clickhouse-server/users.d/named_collections.xml:ro
       - clickhouse-data:/var/lib/clickhouse
     ulimits:
       nofile: { soft: 262144, hard: 262144 }
@@ -54,6 +59,49 @@ services:
       start_period: 20s
     mem_limit: 3g
 
+  # Object storage with an S3 API: raw Parquet files and documents.
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.48
+    restart: unless-stopped
+    environment:
+      WEED_ADMIN_USER: ${SEAWEEDFS_UI_USER:?set SEAWEEDFS_UI_USER in .env}
+      WEED_ADMIN_PASSWORD: ${SEAWEEDFS_UI_PASSWORD:?set SEAWEEDFS_UI_PASSWORD in .env}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /tmp/s3.json <<EOF
+        {"identities": [
+          {"name": "admin",
+           "credentials": [{"accessKey": "${SEAWEEDFS_ADMIN_ACCESS_KEY:?set SEAWEEDFS_ADMIN_ACCESS_KEY in .env}", 
+                            "secretKey": "${SEAWEEDFS_ADMIN_SECRET_KEY:?set SEAWEEDFS_ADMIN_SECRET_KEY in .env}"}],
+           "actions": ["Admin", "Read", "Write", "List", "Tagging"]},
+          {"name": "airbyte",
+           "credentials": [{"accessKey": "${SEAWEEDFS_AIRBYTE_ACCESS_KEY:?set SEAWEEDFS_AIRBYTE_ACCESS_KEY in .env}", 
+                            "secretKey": "${SEAWEEDFS_AIRBYTE_SECRET_KEY:?set SEAWEEDFS_AIRBYTE_SECRET_KEY in .env}"}],
+           "actions": ["Read:${SEAWEEDFS_BUCKET:-landing}", 
+                      "Write:${SEAWEEDFS_BUCKET:-landing}", 
+                      "List:${SEAWEEDFS_BUCKET:-landing}"]},
+          {"name": "clickhouse",
+           "credentials": [{"accessKey": "${SEAWEEDFS_CLICKHOUSE_ACCESS_KEY:?set SEAWEEDFS_CLICKHOUSE_ACCESS_KEY in .env}",
+                            "secretKey": "${SEAWEEDFS_CLICKHOUSE_SECRET_KEY:?set SEAWEEDFS_CLICKHOUSE_SECRET_KEY in .env}"}],
+           "actions": ["Read:${SEAWEEDFS_BUCKET:-landing}", "List:${SEAWEEDFS_BUCKET:-landing}"]}
+        ]}
+        EOF
+        exec weed mini -dir=/data -s3.config=/tmp/s3.json -bucket=${SEAWEEDFS_BUCKET:-landing} -admin.port=12646
+    ports:
+      - "${SEAWEEDFS_S3_PORT:-8333}:8333"   # S3 API
+      - "127.0.0.1:12646:12646"   # Admin UI (login required), localhost only
+    volumes:
+      - seaweedfs-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    mem_limit: 1g
+
 volumes:
   postgres-data:
   clickhouse-data:
+  seaweedfs-data:

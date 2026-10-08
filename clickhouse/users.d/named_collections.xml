@@ -1,0 +1,8 @@
+<clickhouse>
+  <users>
+    <default>
+      <!-- Lets the admin create the S3 named collection (default has only access_management). -->
+      <named_collection_control>1</named_collection_control>
+    </default>
+  </users>
+</clickhouse>
