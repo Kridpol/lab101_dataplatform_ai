@@ -1,6 +1,3 @@
--- Minimal shop schema. Runs once, on first start of an empty data volume.
--- updated_at is the cursor Airbyte uses to find new or changed rows.
-
 CREATE SCHEMA shop;
 SET search_path TO shop;
 
