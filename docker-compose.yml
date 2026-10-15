@@ -11,6 +11,8 @@ services:
       POSTGRES_PASSWORD: ${SRC_PG_ADMIN_PASSWORD:?set SRC_PG_ADMIN_PASSWORD in .env}
       AIRBYTE_PG_USER: ${AIRBYTE_PG_USER:?set AIRBYTE_PG_USER in .env}
       AIRBYTE_PG_PASSWORD: ${AIRBYTE_PG_PASSWORD:?set AIRBYTE_PG_PASSWORD in .env}
+    # timezone stays UTC on purpose; log_timezone only changes the log timestamps.
+    command: ["postgres", "-c", "timezone=UTC", "-c", "log_timezone=${TIMEZONE:?set TIMEZONE in .env}"]
     ports:
       - "${SRC_PG_PORT:-5433}:5432"
     volumes:
@@ -30,6 +32,7 @@ services:
     restart: unless-stopped
     environment:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_ADMIN_PASSWORD:?set CLICKHOUSE_ADMIN_PASSWORD in .env}
+      TIMEZONE: ${TIMEZONE:?set TIMEZONE in .env}
 
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
 
@@ -47,6 +50,7 @@ services:
     volumes:
       - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
       - ./clickhouse/sql:/sql:ro
+      - ./clickhouse/config.d/timezone.xml:/etc/clickhouse-server/config.d/timezone.xml:ro
       - ./clickhouse/users.d/named_collections.xml:/etc/clickhouse-server/users.d/named_collections.xml:ro
       - clickhouse-data:/var/lib/clickhouse
     ulimits:
@@ -64,6 +68,7 @@ services:
     image: chrislusf/seaweedfs:4.48
     restart: unless-stopped
     environment:
+      TZ: ${TIMEZONE:?set TIMEZONE in .env}
       WEED_ADMIN_USER: ${SEAWEEDFS_UI_USER:?set SEAWEEDFS_UI_USER in .env}
       WEED_ADMIN_PASSWORD: ${SEAWEEDFS_UI_PASSWORD:?set SEAWEEDFS_UI_PASSWORD in .env}
     entrypoint: ["/bin/sh", "-c"]
@@ -93,6 +98,8 @@ services:
       - "127.0.0.1:12646:12646"   # Admin UI (login required), localhost only
     volumes:
       - seaweedfs-data:/data
+      # The image has no tzdata: ship the zone file so TZ works. Replace it if TIMEZONE changes.
+      - ./seaweedfs/zoneinfo/Asia/Bangkok:/usr/share/zoneinfo/Asia/Bangkok:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8333/healthz"]
       interval: 10s

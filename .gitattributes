@@ -1,3 +1,6 @@
 * text=auto eol=lf
 *.png binary
 *.jpg binary
+
+# Binary zone data mounted into SeaweedFS (its image has no tzdata)
+seaweedfs/zoneinfo/** binary

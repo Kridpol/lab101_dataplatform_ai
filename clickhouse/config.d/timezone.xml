@@ -1,0 +1,4 @@
+<clickhouse>
+  <!-- Display timezone for DateTime without an explicit zone. Stored values stay UTC. -->
+  <timezone from_env="TIMEZONE"/>
+</clickhouse>
