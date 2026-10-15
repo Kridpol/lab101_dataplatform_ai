@@ -1,0 +1,24 @@
+version: 2
+
+# Structural checks on the finished marts; business rules go to Great Expectations (stage 9).
+models:
+  - name: fct_orders
+    description: One row per order; revenue excludes cancelled and refunded orders.
+    columns:
+      - name: order_id
+        data_tests: [unique, not_null]
+  - name: dim_customers
+    description: One row per customer with order history.
+    columns:
+      - name: customer_id
+        data_tests: [unique, not_null]
+  - name: dim_products
+    description: One row per product with sales totals.
+    columns:
+      - name: product_id
+        data_tests: [unique, not_null]
+  - name: mart_daily_revenue
+    description: One row per calendar day.
+    columns:
+      - name: date_day
+        data_tests: [unique, not_null]

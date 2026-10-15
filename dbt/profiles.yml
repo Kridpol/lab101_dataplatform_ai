@@ -1,0 +1,15 @@
+dataplatform1:
+  target: dev
+  outputs:
+    dev:
+      type: clickhouse
+      driver: http
+      host: "{{ env_var('CLICKHOUSE_HOST') }}"
+      port: "{{ env_var('CLICKHOUSE_PORT') | int }}"
+      user: "{{ env_var('CLICKHOUSE_DBT_USER') }}"
+      password: "{{ env_var('CLICKHOUSE_DBT_PASSWORD') }}"
+      schema: staging
+      secure: false
+      threads: 4
+      custom_settings:
+        join_use_nulls: 1

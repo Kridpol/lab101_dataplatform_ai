@@ -27,3 +27,8 @@ Thumbs.db
 .idea/
 .vscode/
 *.log
+
+# dbt
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/

@@ -1,0 +1,14 @@
+name: dataplatform1
+version: "1.0.0"
+config-version: 2
+profile: dataplatform1
+
+# In ClickHouse a dbt "schema" is a database.
+models:
+  dataplatform1:
+    staging:
+      +materialized: view
+      +schema: staging
+    marts:
+      +materialized: table
+      +schema: marts

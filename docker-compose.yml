@@ -44,6 +44,9 @@ services:
       SEAWEEDFS_BUCKET: ${SEAWEEDFS_BUCKET:-landing}
       SEAWEEDFS_CLICKHOUSE_ACCESS_KEY: ${SEAWEEDFS_CLICKHOUSE_ACCESS_KEY:?set SEAWEEDFS_CLICKHOUSE_ACCESS_KEY in .env}
       SEAWEEDFS_CLICKHOUSE_SECRET_KEY: ${SEAWEEDFS_CLICKHOUSE_SECRET_KEY:?set SEAWEEDFS_CLICKHOUSE_SECRET_KEY in .env}
+      # Used by clickhouse/init/dbt_user_clickhouse.sh
+      CLICKHOUSE_DBT_USER: ${CLICKHOUSE_DBT_USER:?set CLICKHOUSE_DBT_USER in .env}
+      CLICKHOUSE_DBT_PASSWORD: ${CLICKHOUSE_DBT_PASSWORD:?set CLICKHOUSE_DBT_PASSWORD in .env}
     ports:
       - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"     # HTTP: Airbyte, DBeaver
       - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"   # native protocol: clickhouse-client
@@ -108,7 +111,28 @@ services:
       start_period: 20s
     mem_limit: 1g
 
+  # run with: docker compose run --rm dbt <command>
+  dbt:
+    image: python:3.12-slim
+    profiles: ["tools"]
+    working_dir: /dbt
+    entrypoint: ["sh", "/dbt/entrypoint.sh"]
+    environment:
+      DBT_PROFILES_DIR: /dbt
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: 8123
+      TIMEZONE: ${TIMEZONE:?set TIMEZONE in .env}
+      CLICKHOUSE_DBT_USER: ${CLICKHOUSE_DBT_USER:?set CLICKHOUSE_DBT_USER in .env}
+      CLICKHOUSE_DBT_PASSWORD: ${CLICKHOUSE_DBT_PASSWORD:?set CLICKHOUSE_DBT_PASSWORD in .env}
+    volumes:
+      - ./dbt:/dbt
+      - dbt-venv:/opt/venv
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+
 volumes:
   postgres-data:
   clickhouse-data:
   seaweedfs-data:
+  dbt-venv:
