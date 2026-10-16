@@ -2,6 +2,9 @@
 # dbt reads raw and builds staging and marts. Idempotent: re-run to rotate the password.
 set -euo pipefail
 
+CLICKHOUSE_PASSWORD=$(cat /run/secrets/clickhouse_admin_password)
+CLICKHOUSE_DBT_PASSWORD=$(cat /run/secrets/clickhouse_dbt_password)
+
 clickhouse client --user default --password "${CLICKHOUSE_PASSWORD}" --multiquery <<SQL
 CREATE DATABASE IF NOT EXISTS staging;
 CREATE DATABASE IF NOT EXISTS marts;

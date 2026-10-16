@@ -8,15 +8,16 @@ services:
     environment:
       POSTGRES_DB: ${SRC_PG_DB:?set SRC_PG_DB in .env}
       POSTGRES_USER: ${SRC_PG_ADMIN_USER:?set SRC_PG_ADMIN_USER in .env}
-      POSTGRES_PASSWORD: ${SRC_PG_ADMIN_PASSWORD:?set SRC_PG_ADMIN_PASSWORD in .env}
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_admin_password
       AIRBYTE_PG_USER: ${AIRBYTE_PG_USER:?set AIRBYTE_PG_USER in .env}
-      AIRBYTE_PG_PASSWORD: ${AIRBYTE_PG_PASSWORD:?set AIRBYTE_PG_PASSWORD in .env}
+    secrets: [pg_admin_password, airbyte_pg_password]
     # timezone stays UTC on purpose; log_timezone only changes the log timestamps.
     command: ["postgres", "-c", "timezone=UTC", "-c", "log_timezone=${TIMEZONE:?set TIMEZONE in .env}"]
     ports:
       - "${SRC_PG_PORT:-5433}:5432"
     volumes:
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./postgres/seed:/seed:ro
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
@@ -30,23 +31,26 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:25.8
     restart: unless-stopped
+    # The default user's password is read from its secret file, then the stock entrypoint runs.
+    entrypoint: ["/bin/bash", "-c", "export CLICKHOUSE_PASSWORD=$$(cat /run/secrets/clickhouse_admin_password) && exec /entrypoint.sh"]
+    secrets:
+      - clickhouse_admin_password
+      - clickhouse_airbyte_password
+      - clickhouse_loader_password
+      - clickhouse_dbt_password
+      - seaweedfs_clickhouse_access_key
+      - seaweedfs_clickhouse_secret_key
     environment:
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_ADMIN_PASSWORD:?set CLICKHOUSE_ADMIN_PASSWORD in .env}
       TIMEZONE: ${TIMEZONE:?set TIMEZONE in .env}
 
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
 
       CLICKHOUSE_AIRBYTE_USER: ${CLICKHOUSE_AIRBYTE_USER:?set CLICKHOUSE_AIRBYTE_USER in .env}
-      CLICKHOUSE_AIRBYTE_PASSWORD: ${CLICKHOUSE_AIRBYTE_PASSWORD:?set CLICKHOUSE_AIRBYTE_PASSWORD in .env}
       # Used by clickhouse/init/loader_user_clickhouse.sh (loads Parquet from SeaweedFS)
       CLICKHOUSE_LOADER_USER: ${CLICKHOUSE_LOADER_USER:?set CLICKHOUSE_LOADER_USER in .env}
-      CLICKHOUSE_LOADER_PASSWORD: ${CLICKHOUSE_LOADER_PASSWORD:?set CLICKHOUSE_LOADER_PASSWORD in .env}
       SEAWEEDFS_BUCKET: ${SEAWEEDFS_BUCKET:-landing}
-      SEAWEEDFS_CLICKHOUSE_ACCESS_KEY: ${SEAWEEDFS_CLICKHOUSE_ACCESS_KEY:?set SEAWEEDFS_CLICKHOUSE_ACCESS_KEY in .env}
-      SEAWEEDFS_CLICKHOUSE_SECRET_KEY: ${SEAWEEDFS_CLICKHOUSE_SECRET_KEY:?set SEAWEEDFS_CLICKHOUSE_SECRET_KEY in .env}
       # Used by clickhouse/init/dbt_user_clickhouse.sh
       CLICKHOUSE_DBT_USER: ${CLICKHOUSE_DBT_USER:?set CLICKHOUSE_DBT_USER in .env}
-      CLICKHOUSE_DBT_PASSWORD: ${CLICKHOUSE_DBT_PASSWORD:?set CLICKHOUSE_DBT_PASSWORD in .env}
     ports:
       - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"     # HTTP: Airbyte, DBeaver
       - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"   # native protocol: clickhouse-client
@@ -73,25 +77,34 @@ services:
     environment:
       TZ: ${TIMEZONE:?set TIMEZONE in .env}
       WEED_ADMIN_USER: ${SEAWEEDFS_UI_USER:?set SEAWEEDFS_UI_USER in .env}
-      WEED_ADMIN_PASSWORD: ${SEAWEEDFS_UI_PASSWORD:?set SEAWEEDFS_UI_PASSWORD in .env}
+    secrets:
+      - seaweedfs_ui_password
+      - seaweedfs_admin_access_key
+      - seaweedfs_admin_secret_key
+      - seaweedfs_airbyte_access_key
+      - seaweedfs_airbyte_secret_key
+      - seaweedfs_clickhouse_access_key
+      - seaweedfs_clickhouse_secret_key
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
+        s=/run/secrets
+        export WEED_ADMIN_PASSWORD=$$(cat $$s/seaweedfs_ui_password)
         cat > /tmp/s3.json <<EOF
         {"identities": [
           {"name": "admin",
-           "credentials": [{"accessKey": "${SEAWEEDFS_ADMIN_ACCESS_KEY:?set SEAWEEDFS_ADMIN_ACCESS_KEY in .env}", 
-                            "secretKey": "${SEAWEEDFS_ADMIN_SECRET_KEY:?set SEAWEEDFS_ADMIN_SECRET_KEY in .env}"}],
+           "credentials": [{"accessKey": "$$(cat $$s/seaweedfs_admin_access_key)",
+                            "secretKey": "$$(cat $$s/seaweedfs_admin_secret_key)"}],
            "actions": ["Admin", "Read", "Write", "List", "Tagging"]},
           {"name": "airbyte",
-           "credentials": [{"accessKey": "${SEAWEEDFS_AIRBYTE_ACCESS_KEY:?set SEAWEEDFS_AIRBYTE_ACCESS_KEY in .env}", 
-                            "secretKey": "${SEAWEEDFS_AIRBYTE_SECRET_KEY:?set SEAWEEDFS_AIRBYTE_SECRET_KEY in .env}"}],
-           "actions": ["Read:${SEAWEEDFS_BUCKET:-landing}", 
-                      "Write:${SEAWEEDFS_BUCKET:-landing}", 
+           "credentials": [{"accessKey": "$$(cat $$s/seaweedfs_airbyte_access_key)",
+                            "secretKey": "$$(cat $$s/seaweedfs_airbyte_secret_key)"}],
+           "actions": ["Read:${SEAWEEDFS_BUCKET:-landing}",
+                      "Write:${SEAWEEDFS_BUCKET:-landing}",
                       "List:${SEAWEEDFS_BUCKET:-landing}"]},
           {"name": "clickhouse",
-           "credentials": [{"accessKey": "${SEAWEEDFS_CLICKHOUSE_ACCESS_KEY:?set SEAWEEDFS_CLICKHOUSE_ACCESS_KEY in .env}",
-                            "secretKey": "${SEAWEEDFS_CLICKHOUSE_SECRET_KEY:?set SEAWEEDFS_CLICKHOUSE_SECRET_KEY in .env}"}],
+           "credentials": [{"accessKey": "$$(cat $$s/seaweedfs_clickhouse_access_key)",
+                            "secretKey": "$$(cat $$s/seaweedfs_clickhouse_secret_key)"}],
            "actions": ["Read:${SEAWEEDFS_BUCKET:-landing}", "List:${SEAWEEDFS_BUCKET:-landing}"]}
         ]}
         EOF
@@ -123,13 +136,42 @@ services:
       CLICKHOUSE_PORT: 8123
       TIMEZONE: ${TIMEZONE:?set TIMEZONE in .env}
       CLICKHOUSE_DBT_USER: ${CLICKHOUSE_DBT_USER:?set CLICKHOUSE_DBT_USER in .env}
-      CLICKHOUSE_DBT_PASSWORD: ${CLICKHOUSE_DBT_PASSWORD:?set CLICKHOUSE_DBT_PASSWORD in .env}
+    secrets: [clickhouse_dbt_password]
     volumes:
       - ./dbt:/dbt
       - dbt-venv:/opt/venv
     depends_on:
       clickhouse:
         condition: service_healthy
+
+# Created by scripts/gen_secrets.sh; compose fails if a file is missing.
+secrets:
+  pg_admin_password:
+    file: ./secrets/pg_admin_password
+  airbyte_pg_password:
+    file: ./secrets/airbyte_pg_password
+  clickhouse_admin_password:
+    file: ./secrets/clickhouse_admin_password
+  clickhouse_airbyte_password:
+    file: ./secrets/clickhouse_airbyte_password
+  clickhouse_loader_password:
+    file: ./secrets/clickhouse_loader_password
+  clickhouse_dbt_password:
+    file: ./secrets/clickhouse_dbt_password
+  seaweedfs_ui_password:
+    file: ./secrets/seaweedfs_ui_password
+  seaweedfs_admin_access_key:
+    file: ./secrets/seaweedfs_admin_access_key
+  seaweedfs_admin_secret_key:
+    file: ./secrets/seaweedfs_admin_secret_key
+  seaweedfs_airbyte_access_key:
+    file: ./secrets/seaweedfs_airbyte_access_key
+  seaweedfs_airbyte_secret_key:
+    file: ./secrets/seaweedfs_airbyte_secret_key
+  seaweedfs_clickhouse_access_key:
+    file: ./secrets/seaweedfs_clickhouse_access_key
+  seaweedfs_clickhouse_secret_key:
+    file: ./secrets/seaweedfs_clickhouse_secret_key
 
 volumes:
   postgres-data:

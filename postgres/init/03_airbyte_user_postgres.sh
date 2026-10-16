@@ -1,5 +1,7 @@
 set -euo pipefail
 
+AIRBYTE_PG_PASSWORD=$(cat /run/secrets/airbyte_pg_password)
+
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-SQL
     CREATE ROLE ${AIRBYTE_PG_USER} LOGIN PASSWORD '${AIRBYTE_PG_PASSWORD}';
     GRANT USAGE ON SCHEMA shop TO ${AIRBYTE_PG_USER};

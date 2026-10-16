@@ -1,5 +1,7 @@
 set -euo pipefail
 
+CLICKHOUSE_AIRBYTE_PASSWORD=$(cat /run/secrets/clickhouse_airbyte_password)
+
 clickhouse client --user default --password "${CLICKHOUSE_PASSWORD}" --multiquery <<SQL
 CREATE DATABASE IF NOT EXISTS raw;
 

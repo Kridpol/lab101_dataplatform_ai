@@ -3,6 +3,11 @@
 # loader may read raw and the S3 collection, and write only raw.
 set -euo pipefail
 
+CLICKHOUSE_PASSWORD=$(cat /run/secrets/clickhouse_admin_password)
+CLICKHOUSE_LOADER_PASSWORD=$(cat /run/secrets/clickhouse_loader_password)
+SEAWEEDFS_CLICKHOUSE_ACCESS_KEY=$(cat /run/secrets/seaweedfs_clickhouse_access_key)
+SEAWEEDFS_CLICKHOUSE_SECRET_KEY=$(cat /run/secrets/seaweedfs_clickhouse_secret_key)
+
 clickhouse client --user default --password "${CLICKHOUSE_PASSWORD}" --multiquery <<SQL
 CREATE DATABASE IF NOT EXISTS raw;
 
