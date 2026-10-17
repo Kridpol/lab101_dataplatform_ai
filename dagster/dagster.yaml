@@ -1,0 +1,14 @@
+# Instance config: run history lives in its own Postgres.
+storage:
+  postgres:
+    postgres_db:
+      username:
+        env: DAGSTER_PG_USER
+      password:
+        env: DAGSTER_PG_PASSWORD
+      hostname: dagster-postgres
+      db_name: dagster
+      port: 5432
+
+telemetry:
+  enabled: false

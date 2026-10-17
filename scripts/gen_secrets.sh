@@ -9,7 +9,7 @@ mkdir -p secrets
 chmod 700 secrets
 
 names="
-pg_admin_password airbyte_pg_password
+pg_admin_password airbyte_pg_password dagster_pg_password
 clickhouse_admin_password clickhouse_airbyte_password clickhouse_loader_password clickhouse_dbt_password
 seaweedfs_ui_password
 seaweedfs_admin_access_key seaweedfs_admin_secret_key

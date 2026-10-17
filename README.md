@@ -15,7 +15,7 @@ docker compose ps
 
 ## Secrets
 
-Passwords and keys are files in `./secrets`, one per value, created by `scripts/gen_secrets.sh` (existing files are kept). Compose mounts them into containers at `/run/secrets/<name>`, so they are not in environment variables or `docker inspect`. To read one: `cat secrets/<name>`. Init scripts run only on an empty volume: to change a password later, run `ALTER USER` and update its file.
+Passwords and keys are files in `./secrets`, one per value, created by `scripts/gen_secrets.sh` (existing files are kept). Compose mounts them into containers at `/run/secrets/<name>`, so they are not in environment variables or `docker inspect`. Two are not generated: copy `airbyte_client_id` and `airbyte_client_secret` from `abctl local credentials` into `secrets/`. To read one: `cat secrets/<name>`. Init scripts run only on an empty volume: to change a password later, run `ALTER USER` and update its file.
 
 ## Sample data
 
@@ -33,6 +33,7 @@ After `docker compose down -v` and a reseed, clear the three streams in Airbyte 
 |---|---|---|
 | Airbyte | http://localhost:8000 | Email set with `abctl local credentials --email <email>`; password printed by that command |
 | SeaweedFS Admin (buckets, files) | http://localhost:12646 | `SEAWEEDFS_UI_USER` from `.env`, password in `secrets/seaweedfs_ui_password`; bound to 127.0.0.1 only |
+| Dagster (orchestrator) | http://localhost:3000 | No login; bound to 127.0.0.1 only |
 | ClickHouse SQL editor | http://localhost:8123/play | User `loader` (`secrets/clickhouse_loader_password`) or `default` (`secrets/clickhouse_admin_password`) |
 
 Ports without a web UI:

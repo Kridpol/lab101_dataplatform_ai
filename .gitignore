@@ -19,6 +19,14 @@ __pycache__/
 # Airflow (later stages)
 airflow/logs/
 
+# Dagster runtime files (DAGSTER_HOME is ./dagster)
+dagster/storage/
+dagster/logs/
+dagster/history/
+dagster/.logs_queue/
+dagster/.telemetry/
+dagster/.nux/
+
 # Great Expectations (later stages)
 gx/uncommitted/
 

@@ -144,8 +144,102 @@ services:
       clickhouse:
         condition: service_healthy
 
+  # Orchestrator: run history in dagster-postgres, UI on :3000, daemon runs schedules.
+  dagster-postgres:
+    image: postgres:16.15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dagster
+      POSTGRES_USER: ${DAGSTER_PG_USER:?set DAGSTER_PG_USER in .env}
+      POSTGRES_PASSWORD_FILE: /run/secrets/dagster_pg_password
+    secrets: [dagster_pg_password]
+    ports:
+      - "127.0.0.1:${DAGSTER_PG_PORT:-5434}:5432"   # for DBeaver, localhost only
+    volumes:
+      - dagster-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d dagster"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    mem_limit: 256m
+
+  dagster-webserver:
+    image: python:3.12-slim
+    restart: unless-stopped
+    entrypoint: ["sh", "/opt/dagster/entrypoint.sh", "webserver"]
+    environment:
+      DAGSTER_HOME: /opt/dagster
+      DAGSTER_PG_USER: ${DAGSTER_PG_USER:?set DAGSTER_PG_USER in .env}
+      AIRBYTE_WORKSPACE_ID: ${AIRBYTE_WORKSPACE_ID:?set AIRBYTE_WORKSPACE_ID in .env}
+      AIRBYTE_CONNECTION_ID: ${AIRBYTE_CONNECTION_ID:?set AIRBYTE_CONNECTION_ID in .env}
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: 8123
+      CLICKHOUSE_LOADER_USER: ${CLICKHOUSE_LOADER_USER:?set CLICKHOUSE_LOADER_USER in .env}
+      DBT_PROFILES_DIR: /dbt
+      CLICKHOUSE_DBT_USER: ${CLICKHOUSE_DBT_USER:?set CLICKHOUSE_DBT_USER in .env}
+      TIMEZONE: ${TIMEZONE:?set TIMEZONE in .env}
+      TZ: ${TIMEZONE:?set TIMEZONE in .env}
+    secrets: [dagster_pg_password, airbyte_client_id, airbyte_client_secret, clickhouse_loader_password, clickhouse_dbt_password]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # reach Airbyte (abctl) on the host; needed on Linux
+    ports:
+      - "127.0.0.1:3000:3000"   # no login in Dagster OSS: localhost only
+    volumes:
+      - ./dagster:/opt/dagster
+      - ./clickhouse/sql:/sql:ro   # SQL files run by the load assets
+      - ./dbt:/dbt                 # dbt project run by the dbt assets
+      - dagster-venv:/opt/venv
+    depends_on:
+      dagster-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/server_info')"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 180s   # first start installs the venv
+    mem_limit: 1g
+
+  dagster-daemon:
+    image: python:3.12-slim
+    restart: unless-stopped
+    entrypoint: ["sh", "/opt/dagster/entrypoint.sh", "daemon"]
+    environment:
+      DAGSTER_HOME: /opt/dagster
+      DAGSTER_PG_USER: ${DAGSTER_PG_USER:?set DAGSTER_PG_USER in .env}
+      AIRBYTE_WORKSPACE_ID: ${AIRBYTE_WORKSPACE_ID:?set AIRBYTE_WORKSPACE_ID in .env}
+      AIRBYTE_CONNECTION_ID: ${AIRBYTE_CONNECTION_ID:?set AIRBYTE_CONNECTION_ID in .env}
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: 8123
+      CLICKHOUSE_LOADER_USER: ${CLICKHOUSE_LOADER_USER:?set CLICKHOUSE_LOADER_USER in .env}
+      DBT_PROFILES_DIR: /dbt
+      CLICKHOUSE_DBT_USER: ${CLICKHOUSE_DBT_USER:?set CLICKHOUSE_DBT_USER in .env}
+      TIMEZONE: ${TIMEZONE:?set TIMEZONE in .env}
+      TZ: ${TIMEZONE:?set TIMEZONE in .env}
+    secrets: [dagster_pg_password, airbyte_client_id, airbyte_client_secret, clickhouse_loader_password, clickhouse_dbt_password]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./dagster:/opt/dagster
+      - ./clickhouse/sql:/sql:ro   # SQL files run by the load assets
+      - ./dbt:/dbt                 # dbt project run by the dbt assets
+      - dagster-venv:/opt/venv
+    depends_on:
+      dagster-webserver:
+        condition: service_healthy   # webserver builds the shared venv first
+    mem_limit: 1g
+
 # Created by scripts/gen_secrets.sh; compose fails if a file is missing.
 secrets:
+  # Copy these two from `abctl local credentials` (not generated).
+  airbyte_client_id:
+    file: ./secrets/airbyte_client_id
+  airbyte_client_secret:
+    file: ./secrets/airbyte_client_secret
+  dagster_pg_password:
+    file: ./secrets/dagster_pg_password
   pg_admin_password:
     file: ./secrets/pg_admin_password
   airbyte_pg_password:
@@ -178,3 +272,5 @@ volumes:
   clickhouse-data:
   seaweedfs-data:
   dbt-venv:
+  dagster-pg-data:
+  dagster-venv:
